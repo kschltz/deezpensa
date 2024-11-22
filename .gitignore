@@ -24,3 +24,10 @@ test/cljd-out/
 .nrepl-port
 *.iml
 *.env*
+/build
+# ClojureDart
+.cpcache/
+.clojuredart/
+lib/cljd-out/
+test/cljd-out/
+.flutter-plugins*
