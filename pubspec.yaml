@@ -12,6 +12,8 @@ dependencies:
   material: ^1.0.0+2
   path: ^1.9.1
   sqflite: ^2.4.1
+  sqlite3: ^2.5.0
+  sqflite_common_ffi_web: ^0.4.5+4
   # path: ^1.8.0
 
 dev_dependencies:

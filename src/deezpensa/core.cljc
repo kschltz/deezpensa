@@ -1,5 +1,6 @@
 (ns deezpensa.core
   (:require ["package:flutter/material.dart" :as m]
+            [clojure.string :as str]
             [deezpensa.db :as db]
             [deezpensa.model.item :as item]
             [cljd.flutter :as f]))
@@ -26,8 +27,63 @@
                                                         .blurRadius 3)])
                  .child widget)))))
 
+(defn remove-from-stock [stock id]
+  (swap! stock
+         (fn [s]
+           (println "removing" id)
+           (remove #(= id (:id %)) s))))
+
+
+(defn add-item-form [a-show?]
+  (let [form-key (#/(m/GlobalKey m/FormState))]
+    (f/widget
+      :watch [show a-show?]
+      (m/SizedBox
+        .height (if show 200 0)
+        .child(f/widget
+                    :get [m/ScaffoldMessenger
+                          :save-to-db]
+                    :managed [name-ctrl (m/TextEditingController)
+                              section-ctrl (m/TextEditingController)]
+                    (m/Form .key form-key)
+                    (m/Column .crossAxisAlignment m/CrossAxisAlignment.start)
+                    .children
+                    [(m/TextFormField
+                       .controller name-ctrl
+                       .decoration (m/InputDecoration .labelText "Produto")
+                       .validator (fn [value] (when (str/blank? value) "campo obrigatório")))
+                     (m/TextFormField
+                       .controller section-ctrl
+                       .decoration (m/InputDecoration .labelText "seção")
+                       .validator (fn [value] (when (str/blank? value) "campo obrigatório")))
+                     (m/Padding .padding (m/EdgeInsets.symmetric .vertical 16.0))
+                     (m/Row
+                       .mainAxisAlignment m/MainAxisAlignment.end
+                       .children
+                       [(m/ElevatedButton
+                          .onPressed #(when (.validate (.-currentState form-key))
+                                        (do
+                                          (swap! a-show? not)
+                                          (save-to-db {:id (str (random-uuid))
+                                                       :name (.text name-ctrl)
+                                                       :section (.text section-ctrl)})
+                                          (.showSnackBar scaffold-messenger
+                                                         (f/widget
+                                                           (m/SnackBar
+                                                             .content
+                                                             (m/Text (str "Salvando dados..."))))))
+                                        nil)
+                          .child (m/Text "Adicionar"))
+                        (m/ElevatedButton
+                         .onPressed (fn [] (swap! a-show? not))
+                         .child (m/Text "Cancelar"))
+                        (m/SizedBox .width 16.0)
+                     ])])))))
+
 (defn stock-table [{:keys [title stock]}]
-  (let [rows (->> stock
+
+  (let [a-show? (atom false)
+        rows (->> stock
                   (map
                     (fn [{:keys [id name section]}]
                       (hover (m/Card
@@ -43,37 +99,54 @@
                                                                   .icon (m/Icon m/Icons.add_shopping_cart)
                                                                   .onPressed (fn [] (print "send to shopping list")))
                                                                 ;;remove
-                                                                (m/IconButton
-                                                                  .icon (m/Icon m/Icons.delete)
-                                                                  .onPressed (fn [] (print "remove")))
+                                                                (f/widget
+                                                                  :get [:remove-by-id]
+                                                                  (m/IconButton
+                                                                    .icon (m/Icon m/Icons.delete)
+                                                                    .onPressed (fn []
+                                                                                 (print "remove")
+                                                                                 (remove-by-id id)
+
+                                                                                 nil)))
                                                                 ])]))))))]
 
-    (m/Center
-      .child (m/ListView
-               .children (concat [(m/Text title .style (m/TextStyle .fontSize large))
-                                  (m/Divider)]
-                                 rows))))
+    (f/widget
+      :bind {:a-show? a-show?}
+      :watch [show? a-show?]
+      (m/Center
+        .child (m/ListView
+                 .children
+                 (concat [(m/Row
+                            .mainAxisAlignment m/MainAxisAlignment.start
+                            .children [(m/Text title .style (m/TextStyle .fontSize large))
+
+                                       (m/Divider)
+                                       (m/Card
+                                         .child (m/IconButton
+                                                  .icon (m/Icon m/Icons.add)
+                                                  .onPressed (fn []
+                                                               (swap! a-show? not)
+                                                               (print "add"))))])
+                          (m/Divider)
+                          (add-item-form a-show?)
+                          (m/Divider)]
+                         rows)))))
 
   )
 
-(defn dispensa-page [{:keys [stock]}]
+(defn despensa-page [{:keys [stock]}]
   (f/widget
     :watch [s stock]
+    :bind {:save-to-db (fn [item] (swap! stock conj item) nil)
+           :remove-by-id (fn [id] (remove-from-stock stock id))}
     (m/Center
-      .child (stock-table {:title "Dispensa" :stock s}))))
+      .child (stock-table {:title "Despensa" :stock s :stock-atom stock}))))
 
 (defn lista-de-compras-page []
   (m/Center
     .child (m/Text "Lista de Compras"
                    .style (m/TextStyle .fontSize large))))
 
-(defn drawer-header []
-  (m/DrawerHeader
-    .decoration (m/BoxDecoration .color m/Colors.blue)
-    .child (m/Text "Menu"
-                   .style (m/TextStyle
-                            .color m/Colors.white
-                            .fontSize large))))
 
 (defn menu-item [icon title on-tap]
   (m/ListTile
@@ -87,57 +160,31 @@
   (m/Drawer
     .child (m/ListView
              .padding m/EdgeInsets.zero
-             ;(drawer-header)
-             .children [(menu-item m/Icons.kitchen "Dispensa" (partial set-page 0))
+             .children [(menu-item m/Icons.kitchen "Despensa" (partial set-page 0))
                         (menu-item m/Icons.add_shopping_cart "Lista de Compras" (partial set-page 1))])))
 
 (defonce mock-stock
-         [{:id (random-uuid) :name "Arroz" :section "Grãos"}
-          {:id (random-uuid) :name "Feijão" :section "Grãos"}
-          {:id (random-uuid) :name "Macarrão" :section "Massas"}
-          {:id (random-uuid) :name "Molho de Tomate" :section "Molhos"}
-          {:id (random-uuid) :name "Óleo" :section "Óleos"}
-          {:id (random-uuid) :name "Sal" :section "Temperos"}
-          {:id (random-uuid) :name "Açúcar" :section "Temperos"}
-          {:id (random-uuid) :name "Café" :section "Bebidas"}
-          {:id (random-uuid) :name "Leite" :section "Bebidas"}
-          {:id (random-uuid) :name "Refrigerante" :section "Bebidas"}
-          {:id (random-uuid) :name "Cerveja" :section "Bebidas"}
-          {:id (random-uuid) :name "Carne" :section "Carnes"}
-          {:id (random-uuid) :name "Frango" :section "Carnes"}
-          {:id (random-uuid) :name "Peixe" :section "Carnes"}
-          {:id (random-uuid) :name "Ovos" :section "Carnes"}
-          {:id (random-uuid) :name "Pão" :section "Padaria"}
-          {:id (random-uuid) :name "Bolacha" :section "Padaria"}
-          {:id (random-uuid) :name "Biscoito" :section "Padaria"}
-          {:id (random-uuid) :name "Bolo" :section "Padaria"}
-          {:id (random-uuid) :name "Leite Condensado" :section "Doces"}
-          {:id (random-uuid) :name "Chocolate" :section "Doces"}
-          {:id (random-uuid) :name "Gelatina" :section "Doces"}
-          {:id (random-uuid) :name "Sorvete" :section "Doces"}
-          {:id (random-uuid) :name "Detergente" :section "Limpeza"}
-          {:id (random-uuid) :name "Sabão em Pó" :section "Limpeza"}
-          {:id (random-uuid) :name "Desinfetante" :section "Limpeza"}
-          {:id (random-uuid) :name "Água Sanitária" :section "Limpeza"}
-          {:id (random-uuid) :name "Papel Higiênico" :section "Limpeza"}
-          {:id (random-uuid) :name "Sabonete" :section "Higiene"}
-          {:id (random-uuid) :name "Shampoo" :section "Higiene"}
-          {:id (random-uuid) :name "Condicionador" :section "Higiene"}
-          {:id (random-uuid) :name "Creme Dental" :section "Higiene"}
-          {:id (random-uuid) :name "Fio Dental" :section "Higiene"}
-          {:id (random-uuid) :name "Desodorante" :section "Higiene"}])
+         [{:id "a" :name "Arroz" :section "Grãos"}
+          {:id "b" :name "Feijão" :section "Grãos"}
+          {:id "c" :name "Macarrão" :section "Massas"}
+          {:id "d" :name "Molho de Tomate" :section "Molhos"}])
 
 (defn gestor-domestico []
   (let [database (db/start "deezpensa.db")
-        _ (db/insert database "items" (item/map->Item {:id (random-uuid) :name "Arroz" :section "Grãos"}))
-        items (db/list database "items")
-        _ (.then items (fn [x] (prn "ITEMS: " x)))
+        despensa (atom [])
         selected-page (atom 0)
-        stock (atom mock-stock)
         set-page (fn [page]
                    (reset! selected-page page)
                    nil)
-        pages [(dispensa-page {:stock stock}) (lista-de-compras-page)]]
+        pages [(despensa-page {:stock despensa}) (lista-de-compras-page)]
+        refresh (fn [] (.then (db/list database "items")
+                              (fn [i] (reset! despensa (distinct i)))))]
+
+    (refresh)
+    (add-watch despensa :update
+               (fn [_ _ _ new-despensa]
+                 (db/batch-insert database "items" new-despensa) nil))
+
     (f/widget
       :watch [page selected-page]
       (m/Scaffold
